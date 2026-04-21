@@ -1,0 +1,472 @@
+Realm
+______
+Roles	admin, Manager, user	       Define what users can do (global permissions)
+Users	root (with password)	       People who can log in
+Client	product-service	               Your Spring Boot app (registered to use Keycloak)
+
+EcommerceMs Realm
+│
+├── ROLES (Global permissions)
+│   ├── admin
+│   ├── Manager
+│   └── user
+│
+├── USERS
+│   └── root (assigned roles: admin, Manager, user)
+│
+└── CLIENTS (Applications)
+    └── product-service
+        ├── Client Secret: D41hUpgE4tN2vC8BbHNoK6F5zrRL5JL3
+        ├── Direct access grants: ON
+        └── Protocol: OpenID Connect
+Spring boot configurations
+__________________________
+spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:9090/realms/EcommerceMs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Users Request Flow
+__________________
+
+POST http://localhost:9090/realms/EcommerceMs/protocol/openid-connect/token
+Body x-www-form-urlencoded
+key                              values
+___                              ______
+client_id                        product-service
+client_secret                    D41hUpgE4tN2vC8BbHNoK6F5zrRL5JL3  (From client Credentials)
+username                         your_username
+password                         your_password
+grant_type                       password
+
+! The front end only sends username and password and then the other values are filled by
+the backend and send to keycloak and the back end will set the token if the user has been
+authenticated successfully .by setting their header with the bearer + token.
+
+
+# This is where the client secret goes (for getting tokens)
+spring.security.oauth2.client.registration.product-service.client-id=product-service
+spring.security.oauth2.client.registration.product-service.client-secret=D41hUpgE4tN2vC8BbHNoK6F5zrRL5JL3
+spring.security.oauth2.client.registration.product-service.authorization-grant-type=client_credentials
+spring.security.oauth2.client.provider.product-service.token-uri=http://localhost:9090/realms/EcommerceMs/protocol/openid-connect/token
+
+so we dont suppose to create many client in keyloack realm
+✅ YES! You've got it!
+🎯 Simple Answer:
+You need ONLY 2 clients in Keycloak:
+
+Client	Purpose	Has Secret?
+ecommerce-frontend	For users to log in (public)	❌ NO
+api-gateway	For API Gateway to get its own token (for internal calls)	✅ YES
+❌ You DON'T need:
+product-service client
+order-service client
+payment-service client
+
+
+🔑 Simple Explanation:
+The client secret is ONLY used to GET the token, but the token itself is tied to the USER, not the client.
+
+📋 What Happens:
+API Gateway uses its client secret to get a token for itself (if needed for service-to-service calls)
+
+Frontend gets a user token using a public client (no secret)
+
+That user token works for ALL microservices because:
+
+Keycloak signed it
+
+Every microservice can verify the signature
+
+The token contains the user's identity and roles
+
+No client secret needed for validation
+
+Step 1: Frontend → Spring Cloud Gateway
+        Request: GET /api/products
+        Header: Authorization: Bearer eyJ...
+
+Step 2: Spring Cloud Gateway validates token
+        Calls Keycloak: "Is this token valid?"
+        Keycloak: "YES"
+
+Step 3: Spring Cloud Gateway forwards to Product Service
+        Request: GET /api/products
+        Header: Authorization: Bearer eyJ...  (SAME token)
+
+Step 4: Product Service receives request with token
+        Product Service can also validate (if configured)
+
+Step 5: Product Service returns products
+
+Step 6: Spring Cloud Gateway returns products to Frontend
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   FRONTEND                                                                  │
+│      │                                                                      │
+│      │ GET http://localhost:8080/api/products                              │
+│      │ Header: Authorization: Bearer eyJ...                                │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │              SPRING CLOUD GATEWAY (Port 8080) |  Gateway            │   │
+│   │                                                                     │   │
+│   │  application.yml:                                                   │   │
+│   │  ┌─────────────────────────────────────────────────────────────┐   │   │
+│   │  │ routes:                                                     │   │   │
+│   │  │   - id: product-service                                     │   │   │
+│   │  │     uri: http://product-service:8081                        │   │   │
+│   │  │     predicates:                                              │   │   │
+│   │  │       - Path=/api/products/**                               │   │   │
+│   │  │     filters:                                                 │   │   │
+│   │  │       - TokenRelay  ← Forwards token!                       │   │   │
+│   │  └─────────────────────────────────────────────────────────────┘   │   │
+│   │                                                                     │   │
+│   │  SecurityConfig:                                                    │   │
+│   │  @Bean                                                              │   │
+│   │  public SecurityWebFilterChain filterChain(...) {                   │   │
+│   │      return http                                                   │   │
+│   │          .oauth2ResourceServer(oauth2 -> oauth2.jwt())             │   │
+│   │          .authorizeExchange(exchanges -> exchanges                 │   │
+│   │              .anyExchange().authenticated())                       │   │
+│   │          .build();                                                 │   │
+│   │  }                                                                  │   │
+│   │                                                                     │   │
+│   │  ① Validates token with Keycloak                                   │   │
+│   │     "Is this token valid?" → YES                                    │   │
+│   │                                                                     │   │
+│   │  ② Forwards request to Product Service                             │   │
+│   │     WITH THE SAME TOKEN! (TokenRelay filter)                       │   │
+│   │     Header: Authorization: Bearer eyJ...                           │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│      │                                                                      │
+│      │ GET http://product-service:8081/api/products                        │
+│      │ Header: Authorization: Bearer eyJ...                                │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                   PRODUCT SERVICE (Port 8081)                       │   │
+│   │                                                                     │   │
+│   │  SecurityConfig:                                                    │   │
+│   │  @Bean                                                              │   │
+│   │  public SecurityFilterChain filterChain(HttpSecurity http) {        │   │
+│   │      return http                                                   │   │
+│   │          .oauth2ResourceServer(oauth2 -> oauth2.jwt())             │   │
+│   │          .authorizeHttpRequests(auth -> auth                       │   │
+│   │              .anyRequest().authenticated())                        │   │
+│   │          .build();                                                 │   │
+│   │  }                                                                  │   │
+│   │                                                                     │   │
+│   │  @RestController                                                    │   │
+│   │  @RequestMapping("/api/products")                                   │   │
+│   │  public class ProductController {                                   │   │
+│   │      @GetMapping                                                    │   │
+│   │      @PreAuthorize("hasRole('user')")                               │   │
+│   │      public List<Product> getProducts() { ... }                     │   │
+│   │  }                                                                  │   │
+│   │                                                                     │   │
+│   │  ③ ALSO validates token with Keycloak                              │   │
+│   │     "Is this token valid?" → YES                                    │   │
+│   │                                                                     │   │
+│   │  ④ Processes request based on user roles                           │   │
+│   │     @PreAuthorize("hasRole('user')") ✅                             │   │
+│   │                                                                     │   │
+│   │  ⑤ Returns products                                                │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   FRONTEND                                                                  │
+│      │                                                                      │
+│      │ GET /api/products                                                    │
+│      │ Header: Authorization: Bearer eyJ... (token)                        │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      API GATEWAY                                    │   │
+│   │                                                                     │   │
+│   │  ① Validates token with Keycloak                                   │   │
+│   │     "Is this token valid?" → YES                                    │   │
+│   │                                                                     │   │
+│   │  ② Forwards request to Product Service                             │   │
+│   │     WITH THE SAME TOKEN!                                            │   │
+│   │     Header: Authorization: Bearer eyJ... (same token)              │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│      │                                                                      │
+│      │ GET /api/products                                                    │
+│      │ Header: Authorization: Bearer eyJ... (same token)                   │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                   PRODUCT SERVICE                                   │   │
+│   │                                                                     │   │
+│   │  ③ ALSO validates token with Keycloak (optional)                   │   │
+│   │     "Is this token valid?" → YES                                    │   │
+│   │                                                                     │   │
+│   │  ④ Processes request based on user roles                           │   │
+│   │     @PreAuthorize("hasRole('user')")                                │   │
+│   │                                                                     │   │
+│   │  ⑤ Returns products                                                │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   ┌──────────────┐                                                          │
+│   │  FRONTEND    │                                                          │
+│   │  (React)     │                                                          │
+│   └──────┬───────┘                                                          │
+│          │                                                                  │
+│          │ http://localhost:8080/api/products                              │
+│          ↓                                                                  │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │         API GATEWAY MICROSERVICE (Spring Cloud Gateway)              │  │
+│   │                                                                      │  │
+│   │  Port: 8080                                                          │  │
+│   │  Dependencies: spring-cloud-starter-gateway                          │  │
+│   │               spring-boot-starter-oauth2-resource-server             │  │
+│   │                                                                      │  │
+│   │  Routes:                                                             │  │
+│   │    /api/products/** → product-service:8081                           │  │
+│   │    /api/orders/**   → order-service:8082                             │  │
+│   │    /api/payments/** → payment-service:8083                           │  │
+│   │                                                                      │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+│          │                                                                  │
+│          │ Forward to product-service:8081/api/products                    │
+│          ↓                                                                  │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │         PRODUCT SERVICE MICROSERVICE (Spring Boot)                   │  │
+│   │                                                                      │  │
+│   │  Port: 8081                                                          │  │
+│   │  Dependencies: spring-boot-starter-web                               │  │
+│   │               spring-boot-starter-data-jpa                           │  │
+│   │               spring-boot-starter-oauth2-resource-server             │  │
+│   │                                                                      │  │
+│   │  @RestController                                                     │  │
+│   │  @RequestMapping("/api/products")                                    │  │
+│   │  public class ProductController { ... }                              │  │
+│   │                                                                      │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+│          │                                                                  │
+│          │ Database connection                                             │
+│          ↓                                                                  │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │              POSTGRESQL DATABASE                                     │  │
+│   │                                                                      │  │
+│   │  Port: 5432                                                          │  │
+│   │  Database: ecommerce                                                 │  │
+│   │  Table: products                                                     │  │
+│   │                                                                      │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │                    KEYCLOAK                                          │  │
+│   │                                                                      │  │
+│   │  Port: 9090                                                          │  │
+│   │  Realm: EcommerceMs                                                  │  │
+│   │  Client: product-service (confidential)                              │  │
+│   │                                                                      │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   ┌──────────┐                                                              │
+│   │ FRONTEND │                                                              │
+│   │ (React)  │                                                              │
+│   └─────┬────┘                                                              │
+│         │                                                                   │
+│         │ ① ALL requests go to API Gateway                                  │
+│         │    (NEVER directly to services)                                   │
+│         ↓                                                                   │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │                      API GATEWAY                                     │  │
+│   │                                                                      │  │
+│   │  • Validates tokens                                                  │  │
+│   │  • Routes requests to correct service                                │  │
+│   │  • Has client secret (to get service tokens)                        │  │
+│   │  • Handles authentication                                            │  │
+│   │                                                                      │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+│         │                    │                    │                        │
+│         │ ② Routes to       │ ② Routes to       │ ② Routes to            │
+│         │    Product         │    Order          │    Payment             │
+│         ↓                    ↓                    ↓                        │
+│   ┌──────────┐        ┌──────────┐        ┌──────────┐                    │
+│   │ Product  │        │  Order   │        │ Payment  │                    │
+│   │ Service  │        │ Service  │        │ Service  │                    │
+│   │          │        │          │        │          │                    │
+│   │ ❌ NO    │        │ ❌ NO    │        │ ❌ NO    │                    │
+│   │ secret   │        │ secret   │        │ secret   │                    │
+│   │ ❌ NO    │        │ ❌ NO    │        │ ❌ NO    │                    │
+│   │ token    │        │ token    │        │ token    │                    │
+│   │ validation│       │ validation│       │ validation│                   │
+│   │          │        │          │        │          │                    │
+│   │ Only     │        │ Only     │        │ Only     │                    │
+│   │ business │        │ business │        │ business │                    │
+│   │ logic    │        │ logic    │        │ logic    │                    │
+│   └──────────┘        └──────────┘        └──────────┘                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   FRONTEND                                                                  │
+│      │                                                                      │
+│      │ REST call                                                            │
+│      ↓                                                                      │
+│   API GATEWAY                                                               │
+│      │                                                                      │
+│      │ REST call                                                            │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ PRODUCT SERVICE                                                     │   │
+│   │                                                                     │   │
+│   │  REST Controller ← Receives from API Gateway                        │   │
+│   │      │                                                              │   │
+│   │      │ When Order Service needs product data:                       │   │
+│   │      ↓                                                              │   │
+│   │  gRPC Service ← Called by Order Service (internal)                  │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│      ↑                                                                      │
+│      │ gRPC call (internal, fast)                                          │
+│      │                                                                      │
+│   ORDER SERVICE                                                            │
+│   (Needs product info to create order)                                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         PRODUCT SERVICE                                     │
+│                                                                             │
+│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐ │
+│  │    REST CONTROLLER          │    │         gRPC SERVICE                │ │
+│  │    (For API Gateway)        │    │    (For Service-to-Service)         │ │
+│  │                             │    │                                     │ │
+│  │ @RestController             │    │ @GrpcService                       │ │
+│  │ @RequestMapping("/api")     │    │                                     │ │
+│  │                             │    │ public class ProductGrpcService     │ │
+│  │ GET /products  ← Gateway    │    │   extends ProductServiceGrpc       │ │
+│  │ POST /products ← Gateway    │    │                                     │ │
+│  │                             │    │ getProduct() ← Order Service calls  │ │
+│  └─────────────────────────────┘    └─────────────────────────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   FRONTEND                                                                  │
+│      │                                                                      │
+│      │ GET http://api-gateway:8080/api/products                            │
+│      │                                                                      │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      API GATEWAY                                    │   │
+│   │                                                                     │   │
+│   │  "I see /api/products → this goes to Product Service"              │   │
+│   │                                                                     │   │
+│   │  Forwards to: http://product-service:8081/api/products             │   │
+│   │                                                                     │   │
+│   │  Waits for response...                                             │   │
+│   │                                                                     │   │
+│   │  Receives products data                                            │   │
+│   │                                                                     │   │
+│   │  Forwards products data back to frontend                           │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│      │                                                                      │
+│      │ GET http://product-service:8081/api/products                        │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                      PRODUCT SERVICE                                │   │
+│   │                                                                     │   │
+│   │  ProductController.getProducts()                                    │   │
+│   │      ↓                                                              │   │
+│   │  Returns: [{"id":1,"name":"Laptop"},{"id":2,"name":"Mouse"}]      │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   FRONTEND                                                                  │
+│   (React/Angular)                                                           │
+│      │                                                                      │
+│      │ http://localhost:8080/api/products                                   │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │              SPRING CLOUD GATEWAY (Port 8080)                       │   │
+│   │                                                                     │   │
+│   │  application.yml:                                                   │   │
+│   │  ┌─────────────────────────────────────────────────────────────┐   │   │
+│   │  │ routes:                                                     │   │   │
+│   │  │   - id: product-service                                     │   │   │
+│   │  │     uri: http://product-service:8081                        │   │   │
+│   │  │     predicates:                                              │   │   │
+│   │  │       - Path=/api/products/**                               │   │   │
+│   │  └─────────────────────────────────────────────────────────────┘   │   │
+│   │                                                                     │   │
+│   │  Forwards request to: http://product-service:8081/api/products     │   │
+│   │  Waits for response                                                │   │
+│   │  Returns response to frontend                                      │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│      │                                                                      │
+│      │ http://product-service:8081/api/products                            │
+│      ↓                                                                      │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │              PRODUCT SERVICE (Port 8081)                            │   │
+│   │                                                                     │   │
+│   │  @RestController                                                    │   │
+│   │  @RequestMapping("/api/products")                                   │   │
+│   │  public class ProductController {                                   │   │
+│   │      @GetMapping                                                    │   │
+│   │      public List<Product> getProducts() { ... }                     │   │
+│   │  }                                                                  │   │
+│   │                                                                     │   │
+│   │  Returns: [{"id":1,"name":"Laptop"}, ...]                          │   │
+│   │                                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-gateway</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+</dependency>

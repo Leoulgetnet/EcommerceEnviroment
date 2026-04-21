@@ -1,0 +1,177 @@
+what will happen if an app is client to two servers
+______________________________________________
+📋 Using application.properties (works fine):
+
+# Multiple gRPC clients - each with its own address
+grpc.client.product-service.address=static://localhost:8081
+grpc.client.product-service.negotiation-type=plaintext
+
+grpc.client.payment-service.address=static://localhost:8082
+grpc.client.payment-service.negotiation-type=plaintext
+
+✅ Then inject them in your service:
+@Service
+public class OrderService {
+    // Client for Product Service
+    @GrpcClient("product-service")
+    private ProductServiceGrpc.ProductServiceBlockingStub productStub;
+
+    // Client for Payment Service
+    @GrpcClient("payment-service")
+    private PaymentServiceGrpc.PaymentServiceBlockingStub paymentStub;
+
+    public void createOrder() {
+        // Call Product Service
+        ProductResponse product = productStub.getProduct(request);
+        // Call Payment Service
+        PaymentResponse payment = paymentStub.processPayment(paymentRequest); }}
+
+For all communication In terms of server
+________________________________________
+✅ ONE port is enough for ALL gRPC server communication!
+
+
+Server
+______
+syntax = "proto3";
+package stocktrading;
+/*You can name is what ever you want it is just to prevent java naming conflict*/
+option  java_multiple_files=true;
+/*Each messages or services will be held in separate files*/
+option java_package="com.javatechie.grpc";
+/*The location of the classes of the package ,folder will be created there
+There service should also be in com.javatechie*/
+option  java_outer_classname="StockTradingProto";
+//service will be the one which the service will be extended from
+service StockTradingService{
+  /*Then the service class will be extended from (Service name) + Grpc  .   (Service name) + ImplBase*/
+  // UNARY - RPC -> get current stock price
+  rpc getStockPrice(StockRequest) returns (StockResponse);
+  //STREAMING from server sides
+  rpc subscribeStockPrice(StockRequest) returns (stream StockResponse);
+  /*in the service name we should consider that
+  @Override
+  public void getStockPrice(StockRequest request ,StreamObserver<StockResponse> stockStreamResponseObserver)
+  .onNext(StockResponse Objects);
+  .onCompleted();
+  */}
+message StockRequest{
+  string stock_symbol=1;}
+message StockResponse{
+  string stock_symbol=1;
+  double price=2;
+  string timestamp=3;}
+
+@GrpcService
+public class StockTradingServiceImpl extends StockTradingServiceGrpc.StockTradingServiceImplBase {
+    private final StockRepository stockRepository;
+    public StockTradingServiceImpl(StockRepository stockRepository) {
+        this.stockRepository = stockRepository;
+    }
+    //Unary ,onNext only be used once contrary in streaming many times
+    @Override
+    public void getStockPrice(StockRequest request,
+                              StreamObserver<StockResponse> responseObserver) {
+        //stockName -> DB -> map response -> return
+        String stockSymbol = request.getStockSymbol();
+        Stock stockEntity = stockRepository.findByStockSymbol(stockSymbol);
+
+        StockResponse stockResponse = StockResponse.newBuilder()
+                .setStockSymbol(stockEntity.getStockSymbol())
+                .setPrice(stockEntity.getPrice())
+                .setTimestamp(stockEntity.getLastUpdated().toString())
+                .build();
+        responseObserver.onNext(stockResponse);
+        responseObserver.onCompleted();}
+
+    //Stream from server
+    @Override
+    public void subscribeStockPrice(StockRequest request, StreamObserver<StockResponse> responseObserver) throws InterruptedException{
+        String symbol=request.getStockSymbol();
+        try{
+        for(int i=0;i<10;i++)
+        {
+            StockResponse stockResponse=StockResponse.newBuilder()
+                    .setPrice(new Random().nextDouble(200))
+                    .setStockSymbol(symbol)
+                    .setTimestamp(Instant.now().toString())
+                    .build();
+            responseObserver.onNext(stockResponse);
+            TimeUnit.SECONDS.sleep(1);
+        }
+        responseObserver.onCompleted();
+
+        }
+        catch (Exception e){
+            responseObserver.onError(e);
+        }}}
+
+spring.application.name=stock-trading-server
+grpc:server:port: 9090
+enable-reflection: true
+
+Client
+______
+spring.application.name=stock-trading-client
+grpc.client.stockService.address=static://localhost:9090
+grpc.client.stockService.negotiationType=PLAINTEXT
+
+
+@Service
+public class StockClientService {
+    @GrpcClient("stockService")
+    private StockTradingServiceGrpc.StockTradingServiceStub serviceStub;
+
+    @GrpcClient("stockService")
+    private StockTradingServiceGrpc.StockTradingServiceBlockingStub serviceBlockingStub;
+
+    /*grpc.client.stockService.address=static://localhost:9090  , the stock service name should be same as
+    * the above property
+    * serviceBlockingStub.getStockPrice(request--StockRequest);
+    * */
+    public StockResponse getStockPrice(String stockSymbol) {
+        StockRequest request = StockRequest.newBuilder().setStockSymbol(stockSymbol).build();
+        return serviceBlockingStub.getStockPrice(request);
+        /*
+        {"stock_symbol": "GOOGLE"}
+        --The data will send as this --As we tried on post man--
+        */}
+
+    public void subscribeStockPrice(String symbol){
+        StockRequest stockRequest=StockRequest.newBuilder()
+                .setStockSymbol(symbol).build();
+        serviceStub.subscribeStockPrice(stockRequest, new StreamObserver<StockResponse>() {
+            @Override
+            public void onNext(StockResponse stockResponse) {
+                System.out.println("Stock Symbol: "+ stockResponse.getStockSymbol() + "  "+"price:  "+stockResponse.getPrice()+"  "+"TimeStamp:  "+stockResponse.getTimestamp());
+            }
+            @Override
+            public void onError(Throwable throwable) {}
+
+            @Override
+            public void onCompleted() {
+                System.out.println("---------------------------Completed----------------------------");
+            }
+        });}}
+
+
+@SpringBootApplication
+public class StockTradingClientApplication implements CommandLineRunner {
+    private StockClientService stockClientService;
+    public StockTradingClientApplication(StockClientService stockClientService) {
+       this.stockClientService = stockClientService;}
+
+    public static void main(String[] args) {
+       SpringApplication.run(StockTradingClientApplication.class, args);}
+
+    @Override
+    public void run(String... args) throws Exception {
+       stockClientService.subscribeStockPrice("Google");
+       System.out.println(stockClientService.getStockPrice("Google"));}}
+
+
+
+
+
+
+

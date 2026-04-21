@@ -1,0 +1,30 @@
+✅ gRPC (Synchronous - User Waits):
+Process payment
+Place order
+Get product details
+Check stock availability
+Create user account
+Login/authentication
+Add to cart
+Apply discount code
+✅ Kafka (Asynchronous - Background):
+Send order confirmation email
+Send SMS notification
+Deduct inventory after order
+Update order status to "Shipped"
+Generate invoice PDF
+Update search index
+Send push notification
+Update analytics dashboard
+Sync with external warehouse
+Generate sales report
+Update product rating after review
+Send welcome email after registration
+Log user activity for auditing
+Trigger refund process
+Update recommendation engine
+
+🎯 Rule of Thumb:
+User Expects Immediate Result	Use
+YES	          gRPC
+NO	          Kafka

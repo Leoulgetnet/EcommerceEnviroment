@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  postgres:
+    build: .  # Uses your existing Dockerfile
+    ports:
+      - "5432:5432"  #I will access it on 5432 and on the container run on also the 5432
+    environment:
+      - POSTGRES_USER=appuser
+      - POSTGRES_PASSWORD=apppassword
+      - POSTGRES_DB=pharmacysystem
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app  # Uses Dockerfile.app
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/pharmacysystem
+      - SPRING_DATASOURCE_USERNAME=appuser
+      - SPRING_DATASOURCE_PASSWORD=apppassword
+      - SERVER_PORT=8080

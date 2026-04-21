@@ -1,0 +1,24 @@
+syntax = "proto3";
+package product_info_service;
+option java_multiple_files=true;
+option java_package="LeoulGetnetMs.ProductService.ProtoGenerated.ProductInfo";
+
+service ProductInformation{
+  rpc getStockInformation(ProductRequest) returns (ProductResponse);
+  rpc deductStockRequest(ProductDeductStockRequest) returns (ProductResponse);
+}
+
+message ProductRequest{
+   int64 id=1;
+}
+message ProductResponse{
+  int64 id=1;
+  string name=2;
+  int32 currentStock=3;
+  string price=4;
+}
+
+message ProductDeductStockRequest{
+  int64 id=1;
+  int32 quantity=2;
+}

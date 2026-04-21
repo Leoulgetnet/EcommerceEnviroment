@@ -1,0 +1,333 @@
+Resilience in spring boot
+_________________________________
+<dependency>
+    <groupId>io.github.resilience4j</groupId>
+    <artifactId>resilience4j-spring-boot2</artifactId>
+    <version>2.1.0</version>
+</dependency>
+_________________________________
+❌ Without Resilience (What normally happens)
+1. User clicks "Place Order"
+2. Your system creates order #12345
+3. Your system calls Payment Gateway
+4. Payment Gateway is SLOW/FAILING (server issues, network problem, etc.)
+5. Your system WAITS... and WAITS... (maybe 30 seconds)
+6. User sees spinning wheel, gets frustrated
+7. User refreshes page
+8. Your system creates NEW order #12346
+9. User tries payment again
+10. NOW:
+    - Order #12345 eventually processes payment (30 sec later)
+    - Order #12346 also processes payment
+    - Customer got charged TWICE for same item! 💸
+    - Customer support flooded with "I got charged twice" calls
+    - Refund process costs time and money
+    - Angry customer might never return
+
+
+Resilience is simply "Planning for failure" - accepting that things WILL go wrong and having a strategy ready.
+The 5 Core Strategies:
+1)Retry = "Let me try that again, maybe it was a glitch, "
+Example: "Payment failed? Let me try once more in 2 seconds"
+2)Timeout = "I won't wait forever"
+Example: "If payment takes >5 seconds, I'm moving on"
+3)Circuit Breaker = "Stop hitting a dead horse"
+Example: "Payment failed 10 times in a row? I'll stop trying for 1 minute,blocks ALL attempts temporarily"
+4)Fallback = "Here's the next best thing"
+Example: "Can't process payment? I'll save the order and try later"
+5)Bulkhead = "Contain the damage"
+Example: "Payment problems won't affect my search feature"
+
+1)Retry
+--------
+@RestController
+public class PaymentController {
+    @GetMapping("/process-payment/{orderId}")
+    @Retry(name = "paymentRetry", fallbackMethod = "paymentFallback")
+    public String processPayment(@PathVariable Long orderId) {
+        // This might fail temporarily
+        return paymentService.charge(orderId);}
+    // This runs after ALL retries fail
+    public String paymentFallback(Long orderId, Exception ex) {
+        return "Payment failed after 3 tries. Order " + orderId + " saved for later.";}}
+
+    Understanding name = "paymentRetry"
+    The name parameter gives a unique identifier to this retry configuration. It's used for:
+    Identification: Helps identify which retry configuration is being used
+    Configuration: You can define retry settings in properties/yaml files using this name
+    Monitoring: Useful for metrics and logging to track specific retry operations
+
+    # Configure retry settings for "paymentRetry"
+    retry.paymentRetry.maxAttempts=5
+    retry.paymentRetry.backoff.delay=2000
+
+    User sends 1 request
+            ↓
+    System automatically tries 5 times internally
+            ↓
+    User gets 1 response (either success or fallback)
+
+2)Time limiter
+@Service
+public class PaymentService {
+    @TimeLimiter(name = "paymentService", fallbackMethod = "paymentFallback")
+    public CompletableFuture<String> charge(Long orderId) {
+        return CompletableFuture.supplyAsync(() -> {
+            Thread.sleep(5000);
+            return "Payment processed for order: " + orderId;}); }
+
+    public CompletableFuture<String> paymentFallback(Long orderId, Exception ex) {
+        return CompletableFuture.completedFuture("Payment timeout for order: " + orderId);}}
+
+ @GetMapping("/t")
+    CompletableFuture<String> timelimiter() throws InterruptedException {
+        return productRepository.timeLimiter(Long.valueOf(10));
+    }
+       !the fallback method should return same as the method and accept what the method accepts plus
+       exception , up to the rest they all should return the same return type
+
+       resilience4j.timelimiter.instances.paymentService.timeout-duration=3s
+       resilience4j.timelimiter.instances.paymentService.cancel-running-future=true
+
+       @SpringBootApplication
+       @EnableAsync /*For Time Limiter resilience annotation*/
+       public class ProductServiceApplication {
+       	public static void main(String[] args) {
+       		SpringApplication.run(ProductServiceApplication.class, args);}}
+
+
+3)Circuit Breaker
+------------------
+The Circuit Breaker prevents repeated calls to a failing service,
+ allowing it time to recover. It works like an electrical circuit breaker
+ - when something's wrong, it "trips" and stops the flow.
+
+ Three States of Circuit Breaker:
+ CLOSED → OPEN → HALF-OPEN → CLOSED (or back to OPEN)
+
+ CLOSED (Normal operation)
+ Requests flow through normal
+ Failures are counted +=+
+ When the failure threshold reached → trips to OPEN
+
+ OPEN (Service is failing)
+ Requests fail immediately (without calling the service)
+ Gives failing service time to recover
+ After wait period → moves to HALF-OPEN
+
+ HALF-OPEN (Testing the waters)
+ Allows limited test requests
+ If successful → back to CLOSED
+ If failed → back to OPEN
+
+
+  @CircuitBreaker(
+        name = "userService",
+        fallbackMethod = "getUserOrdersFallback"
+    )
+    public List<Order> getUserOrders(Long userId) {
+        return restTemplate.getForObject(
+            "http://order-service/api/orders/user/" + userId,
+            List.class
+        );
+    }
+    public List<Order> getUserOrdersFallback(Long userId, Exception ex) {
+        return Collections.emptyList(); // Return empty list when service fails}}
+
+        !when each of the requests are
+
+# =====================================
+# CIRCUIT BREAKER CONFIGURATION
+# =====================================
+# Basic Configuration for userService
+
+resilience4j.circuitbreaker.instances.userService.sliding-window-type=COUNT_BASED
+The circuit breaker evaluates a fixed number of recent calls (not based on time).
+👉 It looks at calls like: last 10 requests.
+
+resilience4j.circuitbreaker.instances.userService.sliding-window-size=10
+The number of calls stored in the window is 10.
+So it always remembers only the latest 10 calls then it calculates failure rate slow call rate
+👉 It calculates failure/slow rate using the last 10 calls.
+
+resilience4j.circuitbreaker.instances.userService.minimum-number-of-calls=5
+The circuit breaker waits for at least 5 calls before calculating failure rate.
+👉 Prevents wrong decisions when there’s too little data.
+
+!so windows size is , that how any requests it stores , and minimum number of calls is sequence to anaylyse
+example if 5 ,0 up to 5th request it analyses success and failture then starts at 6 and up to 10 , then analyses
+then 11 up to 15 and so on but if on 15 it stopped the 10 previous request has been saved 5 up to 15 .
+once it reachs 10  it will analyse all 10 , 5 is important for first lauch until the request reachs 10
+then it has no importance according to my understanding.
+
+resilience4j.circuitbreaker.instances.userService.permitted-number-of-calls-in-half-open-state=3
+When the circuit is HALF_OPEN, it allows 3 test calls.
+👉 If most succeed → circuit closes
+👉 If they fail → circuit opens again
+
+resilience4j.circuitbreaker.instances.userService.wait-duration-in-open-state=30s
+When the circuit becomes OPEN, it stays open for 30 seconds.
+👉 During this time, no calls are allowed (fails fast).
+
+resilience4j.circuitbreaker.instances.userService.failure-rate-threshold=50
+If 50% or more calls fail, the circuit opens. Calculate is done from windows size.mostly due to exceptions.
+it will analyse what are in the windows size and failure is more than 50 and not 50 percent decides
+if call back method will execute or not execute
+👉 Example: 5 out of 10 calls fail → circuit opens
+
+
+resilience4j.circuitbreaker.instances.userService.slow-call-rate-threshold=50
+If 50% of calls are slow, the circuit can open.
+👉 Even if they don’t fail, slow performance is treated as a problem
+
+resilience4j.circuitbreaker.instances.userService.slow-call-duration-threshold=5s
+Any call taking more than 5 seconds is considered slow.
+👉 Used to calculate the slow call rate
+
+resilience4j.circuitbreaker.instances.userService.automatic-transition-from-open-to-half-open-enabled=true
+After the wait time (30s), the circuit automatically moves to HALF_OPEN.
+👉 No manual intervention needed
+
+resilience4j.circuitbreaker.instances.userService.register-health-indicator=true
+Enables integration with Spring Boot Actuator health endpoint.
+👉 You can see circuit status (UP, DOWN, OPEN, etc.)
+
+resilience4j.circuitbreaker.instances.userService.event-consumer-buffer-size=10
+Stores the last 10 circuit breaker events (success, failure, state change).
+👉 Useful for logging and monitoring behavior
+
+# Exceptions that count as failures
+resilience4j.circuitbreaker.instances.userService.record-exceptions=\
+  org.springframework.web.client.HttpServerErrorException,\
+  java.io.IOException,\
+  java.util.concurrent.TimeoutException,\
+  org.springframework.web.client.ResourceAccessException
+
+# Exceptions that DO NOT count as failures (ignore these)
+resilience4j.circuitbreaker.instances.userService.ignore-exceptions=\
+  com.example.UserNotFoundException,\
+  com.example.BusinessException,\
+  org.springframework.web.client.HttpClientErrorException.NotFound
+
+# =====================================
+# ADDITIONAL CIRCUIT BREAKER INSTANCES
+# =====================================
+
+# Payment Service Circuit Breaker
+resilience4j.circuitbreaker.instances.paymentService.sliding-window-type=TIME_BASED
+resilience4j.circuitbreaker.instances.paymentService.sliding-window-size=60
+resilience4j.circuitbreaker.instances.paymentService.minimum-number-of-calls=10
+resilience4j.circuitbreaker.instances.paymentService.permitted-number-of-calls-in-half-open-state=5
+resilience4j.circuitbreaker.instances.paymentService.wait-duration-in-open-state=60s
+resilience4j.circuitbreaker.instances.paymentService.failure-rate-threshold=40
+
+meaning
+🕒 sliding-window-type=TIME_BASED
+👉 Instead of counting calls, it works based on time
+“Look at calls that happened in the last X seconds”
+⏱️ sliding-window-size=60
+👉 Since it's TIME_BASED:
+Look at calls from the last 60 seconds
+🧠 Example
+If now is 10:00:00, it looks at:
+09:59:00 → 10:00:00
+👉 All calls in that 60-second window are used for calculation
+🔢 minimum-number-of-calls=10
+👉 At least 10 calls must happen within those 60 seconds before any decision is made
+🔥 Important difference from COUNT_BASED
+Before:
+“wait for 5 total calls”
+Now:
+“wait for 10 calls within 60 seconds”
+🔁 permitted-number-of-calls-in-half-open-state=5
+👉 When circuit becomes HALF_OPEN:
+Allow 5 test calls
+If good → CLOSE
+If bad → OPEN again
+⏳ wait-duration-in-open-state=60s
+👉 When circuit is OPEN:
+Wait 60 seconds
+Then move to HALF_OPEN
+❌ failure-rate-threshold=40
+👉 If 40% or more calls fail, circuit opens
+📊 Example (within last 60 seconds)
+Total calls = 20
+Failures = 8
+👉 8 / 20 = 40% → OPEN ✅
+🧠 Big Difference (VERY IMPORTANT)
+COUNT_BASED (before)
+Looks at last N calls
+TIME_BASED (now)
+Looks at calls in last N seconds
+🔥 Real-world intuition
+COUNT_BASED:
+“Check last 10 requests”
+TIME_BASED:
+“Check what happened in the last 60 seconds”
+⚠️ Why TIME_BASED is useful
+Good for high traffic systems
+Reacts to recent spikes in failures
+Ignores old history automatically
+
+# Inventory Service Circuit Breaker
+resilience4j.circuitbreaker.instances.inventoryService.sliding-window-size=20
+resilience4j.circuitbreaker.instances.inventoryService.failure-rate-threshold=30
+resilience4j.circuitbreaker.instances.inventoryService.wait-duration-in-open-state=45s
+resilience4j.circuitbreaker.instances.inventoryService.minimum-number-of-calls=8
+
+# =====================================
+# ACTUATOR ENDPOINTS (for monitoring)
+# =====================================
+management.endpoints.web.exposure.include=health,metrics,circuitbreakers
+management.health.circuitbreakers.enabled=true
+
+4)Fallback
+----------
+Present in Retry and Circuit Breaker
+
+5)Bulkhead
+----------
+Limiting the number of concurrent requests
+What is Bulkhead?
+Bulkhead limits how many concurrent calls can be made to a service. It prevents one slow/failing service
+from consuming all resources and bringing down the entire system.
+@Service
+public class PaymentService {
+    @Bulkhead(name = "paymentService", type = Bulkhead.Type.SEMAPHORE)
+    public String processPayment(Long orderId) {
+        // Only 5 concurrent calls allowed
+        // 6th call will get BulkheadFullException
+        return restTemplate.getForObject("http://payment-api/charge/" + orderId, String.class);}
+
+    // Fallback when bulkhead is full
+    public String processPaymentFallback(Long orderId, Exception ex) {
+        return "Too many payment requests. Order " + orderId + " queued.";
+    }}
+    # SemaphoreBulkhead Configuration
+    resilience4j.bulkhead.instances.paymentService.max-concurrent-calls=5
+    resilience4j.bulkhead.instances.paymentService.fallback-method=processPaymentFallback
+    resilience4j.bulkhead.instances.paymentService.max-wait-duration=10ms
+
+    Request 1-5: Run immediately ✅
+    Request 6:
+        → Wait 10ms for a slot
+        → If slot becomes free in 10ms → runs
+        → If no slot after 10ms → fallback runs ❌
+
+    COUNT_BASED = “last N requests”
+    TIME_BASED = “last N seconds”
+
+
+------------Fall back methods---------------------
+    📋 Fallback Method Rules:
+    Rule	Example
+    Same return type	Product → returns Product
+    Same parameters	(Long id, String name) → same
+    Plus Exception	Add Exception or Throwable at the end
+    🎯 Correct Examples:
+    java
+    // Original
+    public Product getProduct(Long id) { ... }
+
+    // Fallback
+    public Product getProduct(Long id, Exception ex) { ... }

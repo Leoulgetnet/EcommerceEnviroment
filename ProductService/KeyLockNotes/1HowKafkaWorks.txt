@@ -1,0 +1,72 @@
+Kafka Components (Simplified)
+1. Broker - The Post Office
+Kafka server that stores and manages messages
+2. Topic - Mailbox Category
+Categories for messages (e.g., "orders", "notifications")
+Messages are published to topics
+3. Producer - Sender
+Services that send messages to topics
+4. Consumer - Receiver
+Services that read messages from topics
+5. Zookeeper - Manager
+Manages and coordinates Kafka brokers
+(Note: Newer versions are removing Zookeeper)
+Kafka objects that we have to create in order for us to deal with kafka form sender perspective
+
+-@Autowired
+private KafkaTemplate<String, Object> kafkaTemplate;-->it can be any thing the key and the data ,
+currently it is string and object
+-application.property config
+
+# Only 3 essential properties:
+spring.kafka.bootstrap-servers=localhost:9092  --> the kafka broker server port
+"in docker compose KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092 "
+spring.kafka.producer.key-serializer=StringSerializer
+spring.kafka.producer.value-serializer=JsonSerializer
+
+
+-Topics (Message mailboxes)
+  Topics are created automatically when you first send a message.
+  @Bean
+  public NewTopic orderTopic() {
+      return TopicBuilder.name("orders")
+              .partitions(1) //how many subfolders
+              .replicas(1) //how many back up copies
+              .build();}
+
+- @Autowired
+   private KafkaTemplate<String, Object> kafkaTemplate;
+     kafkaTemplate.send("orders", order.getId(), order);
+
+     *"orders"=The topic (mailbox name)
+               Where the message will be stored in Kafka
+               Even if we are here specifying it simply using "" on kafka side, it will have a folder
+               kind where message's like this or under this topic
+                                will be put in.
+               Automatically New topic will be created with default values, but you can create a topic
+               manually like above new topic bean
+     *order.getId()=id
+     *order=the actual message or data
+
+
+
+
+spring.kafka.consumer.bootstrap-servers=${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+spring.kafka.consumer.group-id=kafkaconsumerid
+spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+spring.kafka.consumer.value-deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer
+spring.kafka.consumer.auto-offset-reset=earliest
+
+
+@Service
+public class KafkaService {
+    @KafkaListener(topics = "userActions", groupId = "kafkaconsumerid")
+    public void consumeEvent(byte[] event) {
+        try {
+            PatientEvent patientEvent = PatientEvent.parseFrom(event);
+        } catch (Exception e) {
+            e.printStackTrace();}
+        finally {}}}
+
+
+        spring.kafka.consumer/producer.bootstrap-servers=spring.kafka.bootstrap-servers

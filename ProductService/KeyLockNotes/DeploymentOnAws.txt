@@ -1,0 +1,39 @@
+AWS CLI vs. Linux on AWS
+AWS CLI is a tool to manage AWS resources (create servers, databases, etc.) - think of it as a remote control for AWS.
+It controls EC2 it can be linux , windows or ubuntu or any operating system.
+AWS CLI can control:
+├── 🖥️ Linux servers (EC2 with Linux)
+├── 🖥️ Windows servers (EC2 with Windows)
+├── 🗄️ Databases (RDS - doesn't matter if MySQL, PostgreSQL, etc.)
+├── 📦 Storage (S3 - just storage, no OS at all)
+├── 🤖 Serverless (Lambda - no servers to manage)
+└── ... and everything else!
+EC2 instances are actual Linux/Windows servers in the cloud where you deploy your JAR files.
+
+Setting Up AWS CLI
+Step 1: Get your keys from AWS Console
+Login to AWS Console
+Click your username → Security credentials
+Create Access Key (download CSV file)
+
+Step 2: Configure AWS CLI
+aws configure
+# It will ask:
+AWS Access Key ID: [PASTE YOUR ACCESS KEY - FROM CSV]
+AWS Secret Access Key: [PASTE YOUR SECRET KEY - FROM CSV]
+Default region name: us-east-1
+Default output format: json
+
+Step 3: Test it works
+bash
+# This should show your identity
+aws sts get-caller-identity
+$ aws sts get-caller-identity
+{
+    "UserId": "AIDAEXAMPLE123456789",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/MyUserName"
+}
+
+# This should list your S3 buckets (if any)
+aws s3 ls:->Shows number of storage devices

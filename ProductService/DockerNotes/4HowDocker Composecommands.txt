@@ -1,0 +1,11 @@
+docker-compose up #to start all containers or services in that docker compose file 
+docker-compose up app -d #to start specific service in that docker file 
+docker-compose restart app  
+docker-compose up --build # to pull and also build plus starting the services in that docker file
+docker-compose build app # to mention specific app in the docker compose and build it ,mostly jar files as they will be changed often
+docker-compose build postgres
+docker-compose logs app  -- docker-compose logs postgres
+docker-compose app  # to start it
+docker-ps # to see running containers
+docker-ps -a # to see running containers plus stopped ones
+

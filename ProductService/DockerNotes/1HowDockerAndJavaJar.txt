@@ -1,0 +1,21 @@
+FROM mcr.microsoft.com/openjdk/jdk:21-mariner
+COPY target/*.jar app.jar
+EXPOSE 8080
+ENV SPRING_DATASOURCE_URL="jdbc:postgresql://default-db:5432/defaultdb"
+ENTRYPOINT ["java", "-jar", "app.jar"]
+# java -jar your-app.jar
+#by default it runs of port 8080 ,or server.port if you mentioned
+#ENTRYPOINT ["java", "-jar", "app.jar", "--server.port=8080"] ->this overrides it
+#docker run -p HOST_PORT:CONTAINER_PORT myapp
+#Spring Boot runs on 9090 INSIDE container
+#You access it on 9090 OUTSIDE on your computer
+#docker run -p 9090:9090 -e PORT=9090 myapp--> means i want when i ask you for port 8090 on my computer give
+#me 9090 port from the container(9090:9090) then we set the app to run on port 9090 so the my app will run of
+#9090 on the container
+#http://localhost:9090 on my computer takes me port 9090 on the container
+#curl http://localhost:9090
+#docker run -p 9999:8080 myapp --server.port=8080
+
+
+
+

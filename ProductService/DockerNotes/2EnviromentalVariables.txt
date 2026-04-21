@@ -1,0 +1,39 @@
+--> Hierarchical Property Sources (Priority Order)
+   1. Command Line Arguments (--server.port=9090) ← HIGHEST
+   2. SPRING_APPLICATION_JSON (inline JSON)
+   3. Java System Properties (-Dserver.port=9090)
+   4. OS Environment Variables (SERVER_PORT=9090)
+   5. application-{profile}.properties
+   6. application.properties ← LOWEST
+
+   -->@Value("${spring.datasource.url}")        In application properties there must be
+       private String datasource;               spring.datasource.url=${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/}
+   so @Value ------>spring.datasource.url------->SPRING_DATASOURCE_URL--------->SET US ENVIROMENTAL VARIABLES
+
+   -->some options to set environmental variables
+
+   1)when running without docker
+   java -jar app.jar --spring.datasource.url="jdbc:postgresql://test:5432/testdb"
+
+   2)in docker
+   FROM openjdk:21
+   COPY app.jar
+   Default environment variable (optional)
+   ENV SPRING_DATASOURCE_URL="jdbc:postgresql://default-db:5432/defaultdb"
+   ENTRYPOINT ["java", "-jar", "app.jar"]
+   #docker run -p 9090:9090 -e PORT=9090 myapp , e stands for environmental variables , we have to mention -e again to
+   #assign another enviromental variable
+
+   3)Docker compose
+   version: '3.8'
+   services:
+     app:
+       build:
+       environment:
+         - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/pharmacysystem
+
+
+
+
+
+

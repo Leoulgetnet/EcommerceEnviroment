@@ -1,0 +1,525 @@
+From Coding , when we need client
+Communication          type	Token used	                   Need client secret?
+User → Service	        User token	             ❌ NO (service validates only)
+Service → Service	   Service token	         ✅ YES (service needs its own token)
+✅One client for ALL microservices is FINE!✅
+
+
+# while we are using client - For service-to-service calls (getting your own token)
+spring.security.oauth2.client.registration.ecommerce-backend.client-id=ecommerce-backend   -->client name is used as id
+spring.security.oauth2.client.registration.ecommerce-backend.client-secret=YOUR_SECRET  -->provided in realms client,inside
+spring.security.oauth2.client.registration.ecommerce-backend.authorization-grant-type=client_credentials -->As it is no change needed
+spring.security.oauth2.client.provider.ecommerce-backend.token-uri=http://localhost:9090/realms/EcommerceMs/protocol/openid-connect/token
+
+ without client
+spring.security.oauth2.resourceserver.jwt.issuer-uri=${KEYCLOAK_URL:http://localhost:9090/realms/EcommerceMs}
+
+The 5 Pillars of Keycloak Mastery:
+KEYCLOAK EXPERTISE =
+    1. 📋 Realm Management
+    2. 👥 User Management
+    3. 🖥️ Client Configuration
+    4. 🔐 Roles & Authorization
+    5. ⚙️ Security Settings
+
+     Why Create Users Manually?
+     📊 The 80/20 Rule of User Management:
+     20% - Manual Creation (Admin Creates Users)
+     Used when:
+     Internal employees (HR creates accounts for new hires)
+     B2B/Enterprise clients (Company buys licenses for 50 users)
+     Invite-only systems (Selective access, not open registration)
+     Testing/Development (Create test users)
+     80% - Self-Registration (Users Create Themselves)
+     Used when:
+     Public websites/apps (Anyone can sign up)
+     SaaS platforms (Customers self-onboard)
+     Consumer apps (Social media, e-commerce)
+
+ 1. 📋 Realm Management!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!111
+
+ A realm is like a separate apartment in a large building (Keycloak server).
+ Each apartment is completely isolated from others.
+ Keycloak Server (The Building)
+ ├── Realm A: "acme-corp" (Company A's apartment)
+ ├── Realm B: "startup-inc" (Company B's apartment)
+ └── Realm C: "personal-project" (Your apartment)
+
+ 💼 Use Cases for Multiple Realms
+ Scenario 1: Different Projects
+ Keycloak Instance
+ ├── Realm: "ecommerce-project"    # For your online store
+ │   ├── Users: customers, admins
+ │   ├── Clients: react-frontend, spring-api
+ │   └── Roles: CUSTOMER, ADMIN
+ │
+ ├── Realm: "banking-project"       # For banking app
+ │   ├── Users: account-holders, tellers
+ │   ├── Clients: mobile-app, web-app
+ │   └── Roles: USER, TELLER, MANAGER
+ │
+ └── Realm: "healthcare-project"    # For hospital system
+     ├── Users: doctors, patients
+     ├── Clients: patient-portal, emr-system
+     └── Roles: DOCTOR, NURSE, PATIENT
+
+Realm properties
+
+ ├── Realm: "ecommerce-project"    # For your online store
+ │   ├── Users: customers, admins
+ │   ├── Clients: react-frontend, spring-api
+ │   └── Roles: CUSTOMER, ADMIN
+
+ rather than having them as enum in our database, we can create them here so we could have dynamic configuration.
+ ❌ Without Keycloak (Hardcoded):
+ public enum Role {
+     CUSTOMER,  // If you need a new role, you must:
+     ADMIN      // 1. Modify code
+ }              // 2. Recompile
+                // 3. Redeploy
+                // 4. Restart app
+ @PreAuthorize("hasRole('ADMIN')")  // Role names hardcoded everywhere!
+ public void deleteOrder() {
+     // If you need a MANAGER role tomorrow?
+     // Too bad - change code first! }
+
+✅ With Keycloak (Dynamic):
+@PreAuthorize("hasRole('admin')")
+public void deleteOrder() {
+    // Token says: user has roles [customer, admin, manager]
+    // No code change needed when adding new roles!
+}
+/*How the token looks like*/
+Realm: "ecommerce-project"
+├── Roles (defined in UI):
+│   ├── customer  # Can view products
+│   ├── admin     # Can do everything
+│   └── manager   # Can approve orders (added later without code change!)
+│
+├── Users:
+│   ├── john → roles: [customer]
+│   ├── jane → roles: [admin, manager]
+│   └── bob  → roles: [customer, manager]  # Just assign role in UI!
+
+{"sub": "jane",
+  "realm_access": {
+    "roles": ["admin", "manager"]  ← Comes from Keycloak dynamically!},
+  "email": "jane@store.com"}
+
+ 2. 👥 User Management********************************************************************************
+ When you create a new realm, it starts EMPTY - no users at all:
+ text
+ New Realm: "myapp" (freshly created)
+ ├── Users: []  ← COMPLETELY EMPTY
+ ├── Clients: [] (except the default ones)
+ └── Roles: [] (except built-in like "offline_access")
+
+ BUT - There ARE Default Users in the MASTER Realm: <--------------------------->
+ Master Realm (always exists):
+ text
+ Realm: "master"  ← Special admin realm
+ ├── Users:
+ │   ├── admin  ← Created when you first start Keycloak
+ │   └── (any other admin users you add)
+ ├── Purpose: Managing the entire Keycloak server
+ └── Can: Create/manage OTHER realms
+
+ Your Custom Realms:
+ Realm: "myapp"  ← You create this
+ ├── Users: [] ← STARTS EMPTY
+ └── You must add users manually or via registration
+
+ Realm: "ecommerce"  ← Another custom realm
+ ├── Users: [] ← Also starts empty
+ └── Separate from "myapp" users
+
+so unless we are talking about the master realms which contains admin user for keycloak server,
+user management is about users inside realms (Projects) , we have to create user inside realms
+and assign them roles from the roles we created inside the realms , so that is all about users.
+
+User management and Database
+we might create users in keycloak for some users , like the admins , employers or these people,
+but we do not create for normal users which has to create account and login by themselves, so
+how does this work?
+
+┌──────────┐     1. Login         ┌──────────┐     2. Check        ┌──────────┐
+│          │ ──────────────────►  │          │ ──────────────────► │          │
+│  User    │                      │ Keycloak │                     │ Database │
+│  (browser│ ◄──────────────────  │          │ ◄────────────────── │ (users)  │
+└──────────┘     4. Token         └──────────┘     3. Verify       └──────────┘
+
+     5. Request with token        ┌──────────┐
+    ───────────────────────────►  │          │
+                                  │ Spring   │
+    ◄───────────────────────────  │ Boot App │
+     6. Response                  └──────────┘
+
+how do we connect keycloak with database ?
+it has its own configuration in docker compose , we have to create postgres container then pass the
+entry values to the keycloak.
+ok but all the realms info will be saved in database ?
+YES! 100% YES! Every single piece of configuration, every user, every role - everything about ALL realms is saved in that database!
+
+How do we authenticate users?
+BOTH Realm Users AND Normal Users have their:
+Username/Email
+Password
+ONLY in Keycloak database! , so they could be used for authentication.
+!!!!!!!disclaimer!!!!!!!!
+But additional info will be put in other database tables, only this info will be put in the same database.
+________________________________________________________________
+│   KEYCLOAK DATABASE             YOUR APP DATABASE             │
+│   (PostgreSQL/MySQL)            (Your choice)                 │
+|    _______________________       ______________________       |
+│   │ AUTHENTICATION DATA │       │ BUSINESS DATA       │       │
+│   ├─────────────────────┤       ├─────────────────────┤       │
+│   │ ✓ Username          │       │ ✗ Username          │       │
+│   │ ✓ Email             │       │ ✗ Email             │       │
+│   │ ✓ Password (hashed) │       │ ✗ Password          │       │
+│   │ ✓ Roles             │       │                     │       │
+│   │ ✓ Realm             │       │ ✓ Loyalty points    │       │
+│   │                     │       │ ✓ Order history     │       │
+│   │                     │       │ ✓ Shipping address  │       │
+│   │                     │       │ ✓ Payment methods   │       │
+│   │                     │       │ ✓ Preferences       |       |
+-----------------------------------------------------------------
+
+How Does user registration work for both Realm and normal users ?
+For realm users it is simple , go to the keycloak page , then realms , then to users
+then create new users , but the new idea is that how we can save normal users (Self registration flow) ,
+which are outside the realm.
+┌──────────┐          ┌──────────┐          ┌──────────┐
+│  User    │          │  Your    │          │ Keycloak │
+│ (Browser)│          │  App     │          │ Database │
+└────┬─────┘          └────┬─────┘          └────┬─────┘
+     │                     │                      │
+     │ 1. Fills registration│                      │
+     │    form             │                      │
+     │────────────────────►│                      │
+     │                     │                      │
+     │                     │ 2. Your app calls    │
+     │                     │    Keycloak API      │
+     │                     │───CREATE USER───────►│
+     │                     │                      │
+     │                     │                      │ 3. Keycloak saves:
+     │                     │                      │    - Username ✓
+     │                     │                      │    - Password ✓(hashed)
+     │                     │                      │    - Email ✓
+     │                     │                      │    - Role: customer ✓
+     │                     │                      │
+     │                     │ 4. Keycloak returns  │
+     │                     │    success with User │
+     │                     │◀───USER ID───────────│
+     │                     │                      │
+     │ 5. Registration     │                      │
+     │    complete!        │                      │
+     │◀────────────────────│                      │
+     │                     │                      │
+How Authentication works ?
+┌──────────┐          ┌──────────┐          ┌──────────┐          ┌──────────┐
+│  User    │          │  Your    │          │ Keycloak │          │ Keycloak │
+│ (Browser)│          │  App     │          │  Server  │          │ Database │
+└────┬─────┘          └────┬─────┘          └────┬─────┘          └────┬─────┘
+     │                     │                      │                      │
+     │ 1. Enters login     │                      │                      │
+     │    credentials      │                      │                      │
+     │────────────────────►│                      │                      │
+     │                     │                      │                      │
+     │                     │ 2. Your app redirects│                      │
+     │                     │    to Keycloak       │                      │
+     │                     │──────(or calls API)─►│                      │
+     │                     │                      │                      │
+     │                     │                      │ 3. Keycloak queries  │
+     │                     │                      │    its database      │
+     │                     │                      │───CHECK USER────────►│
+     │                     │                      │                      │
+     │                     │                      │                      │ 4. Database returns
+     │                     │                      │◀───USER FOUND────────│    user record
+     │                     │                      │                      │
+     │                     │                      │ 5. Verifies password │
+     │                     │                      │    (bcrypt check)    │
+     │                     │                      │───┐                  │
+     │                     │                      │   │                  │
+     │                     │                      │◀──┘                  │
+     │                     │                      │                      │
+     │                     │                      │ 6. Generates JWT     │
+     │                     │                      │    token with:       │
+     │                     │                      │    - user id         │
+     │                     │                      │    - username        │
+     │                     │                      │    - roles           │
+     │                     │                      │    - realm           │
+     │                     │                      │                      │
+     │                     │ 7. Returns token     │                      │
+     │                     │◀──────JWT TOKEN──────│                      │
+     │                     │                      │                      │
+     │ 8. Your app sends   │                      │                      │
+     │    token in response│                      │                      │
+     │◀────────────────────│                      │                      │
+     │                     │                      │                      │
+     │ 9. User is logged in!│                     │                      │
+     │    (token stored in  │                     │                      │
+     │     browser/cookie)  │                     │                      │
+     │                     │                      │                      │
+
+How Spring security works with keycloak ?
+┌─────────────────────────────────────────────────────────────────┐
+│                      SPRING SECURITY FLOW                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  WITHOUT KEYCLOAK                    WITH KEYCLOAK              │
+│  (Your Code)                         (Keycloak Adapter)         │
+│                                                                  │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 1. Login Request│                 │ 1. Login Request│        │
+│  │    /login       │                 │    /login       │        │
+│  └────────┬────────┘                 └────────┬────────┘        │
+│           │                                   │                  │
+│           ▼                                   ▼                  │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 2. Create       │                 │ 2. Create       │        │
+│  │    Auth Token   │                 │    Auth Token   │        │
+│  └────────┬────────┘                 └────────┬────────┘        │
+│           │                                   │                  │
+│           ▼                                   ▼                  │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 3. authManager  │                 │ 3. authManager  │        │
+│  │    .authenticate│                 │    .authenticate│        │
+│  └────────┬────────┘                 └────────┬────────┘        │
+│           │                                   │                  │
+│           ▼                                   ▼                  │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 4. UserDetails  │                 │ 4. Keycloak     │        │
+│    Service loads   │                 │    Authentica-  │        │
+│    from YOUR DB    │                 │    tion Provider│        │
+│  └────────┬────────┘                 └────────┬────────┘        │
+│           │                                   │                  │
+│           ▼                                   ▼                  │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 5. Password     │                 │ 5. Keycloak     │        │
+│    Check (BCrypt)  │                 │    Server       │        │
+│  └────────┬────────┘                 │    (checks its  │        │
+│           │                          │     database)   │        │
+│           ▼                          └────────┬────────┘        │
+│  ┌─────────────────┐                          │                  │
+│  │ 6. Returns      │◄─────────────────────────┘                  │
+│    Authenticated   │       (JWT token from Keycloak)             │
+│    Auth Object     │                                              │
+│  └────────┬────────┘                                              │
+│           │                                                       │
+│           ▼                                                       │
+│  ┌─────────────────┐                 ┌─────────────────┐        │
+│  │ 7. Generate     │                 │ 7. Extract      │        │
+│    YOUR JWT Token  │                 │    Keycloak     │        │
+│  └────────┬────────┘                 │    JWT Token    │        │
+│           │                          └────────┬────────┘        │
+│           ▼                                   │                  │
+│  ┌─────────────────┐                          │                  │
+│  │ 8. Set Header   │◄─────────────────────────┘                  │
+│    in Response     │       (Same! Set header)                    │
+│  └─────────────────┘                                              │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+what we don't need from spring security when integrating with keycloak ? (you can reference spring security note in the same folder)
+
+1)public class DualUserDetailsService implements UserDetailsService {
+    private final UserApplicationService userService;
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        try {
+            UserAggForLogin user = userService.findUserByUserName(new UserUserName(username));
+            return new UserPrincipal(user);
+        } catch (UsernameNotFoundException e) {
+                throw new UsernameNotFoundException("User not found with username: " + username);
+            }}}
+1.1)public class UserPrincipal implements UserDetails {}
+2) public PasswordEncoder passwordEncoder() {
+      return new BCryptPasswordEncoder(); }
+3)// ❌ NO USER REPOSITORY FOR AUTH
+  @Entity
+  public class User {
+      private String username;
+      private String password;  // Don't store passwords anymore!
+      // ...
+  }
+
+what we need still from spring security ?
+
+1) @PostMapping("/login")
+  public String login(@RequestParam String username,
+                      @RequestParam String password,
+                      HttpServletResponse response) {
+      Authentication authentication = authenticationManager.authenticate(
+          new UsernamePasswordAuthenticationToken(username, password));
+      if (authentication.isAuthenticated()) {
+          String token = jwtService.generateToken(username);
+          response.setHeader("Authorization", "Bearer " + token);
+          return token;}
+      return "Login failed";}
+2)@Service
+  public class JwtService {
+      public String generateToken(String username) {
+          // Your JWT generation logic - unchanged!
+      }
+  }
+
+Additional and also new configurations ?
+
+// WITHOUT KEYCLOAK - Your config
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public UserDetailsService userDetailsService() {
+        return new MyUserDetailsService();  // YOUR implementation
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService());
+        provider.setPasswordEncoder(passwordEncoder());
+        return new ProviderManager(provider);
+    }
+}
+
+// WITH KEYCLOAK - Keycloak config
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    // No UserDetailsService bean needed!
+    // No PasswordEncoder bean needed!
+
+    @Bean
+    public KeycloakSpringBootConfigResolver keycloakConfigResolver() {
+        return new KeycloakSpringBootConfigResolver();
+    }
+
+    @Bean
+    public KeycloakAuthenticationProvider keycloakAuthenticationProvider() {
+        return new KeycloakAuthenticationProvider();
+        // This REPLACES your DaoAuthenticationProvider!
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+            .anyRequest().authenticated()
+            .and()
+            .oauth2Login();  // Keycloak handles OAuth2 flow
+
+        return http.build();
+    }
+}
+
+
+keycloak config for application properties?
+
+A)keycloak.auth-server-url=http://localhost:8080
+B)keycloak.realm=mycompany
+C)keycloak.resource=spring-boot-app --> is like a REGISTRATION or NAMING SYSTEM for your app in Keycloak! USERNAME / CLIENTID
+D)keycloak.credentials.secret=your-client-secret  -->when registering the password which is given to you. PASSWORD / CLIENTSECRET
+E)keycloak.bearer-only=true  //if true no registration for unregistered ones ❌ 401 Unauthorized (NO redirect) ,
+                           if false it will redirect them to registration page but in both cases they all work with token
+F)spring.security.oauth2.resourceserver.jwt.issuer-uri=${keycloak.auth-server-url}/realms/${keycloak.realm} --> Public key
+                          in order to validate , so it is digital signature
+
+
+How do we register our spring boot application ?
+
+To create ROLES:
+1. Go to your Realm "mycompany"
+2. Click on "Realm Roles" in left menu  ← DIFFERENT MENU!
+3. Click "Create Role"
+4. Name: "customer"
+5. Save
+To create CLIENTS (register your app):
+1. Go to your Realm "mycompany"
+2. Click on "Clients" in left menu  ← DIFFERENT MENU!
+3. Click "Create client"
+4. Client ID: "spring-boot-app"
+5. Save
+6. After saving, go to "Credentials" tab , You'll see Client Secret: aBcD123!@#$xYz7890qWeRtYuiOpAsDfGhJkL
+
+Then, we can set two properties
+C)keycloak.resource=spring-boot-app , client id
+D)keycloak.credentials.secret=your-client-secret
+
+Code , How user registration works ?
+
+📦 Brand New Realm - Empty State:
+New Realm: "mycompany" (freshly created)
+├── 👥 Users: []  ← NO USERS AT ALL!
+├── 🎭 Roles: []  ← NO ROLES (except built-in defaults)
+├── 📱 Clients: [] ← NO APPS REGISTERED
+└── ⚙️ Settings: Default only
+
+Step 1: Empty Realm - No User Configuration Yet
+Realm: "mycompany" (empty)
+└── No user attributes defined
+└── No registration settings
+└── No password policies
+Step 2: You Configure the User Blueprint
+You have to set it up first:
+
+
+To create a user blueprint, you configure:
+1. Realm Settings → Login tab (About putting your email and password)
+   - Turn on/off registration
+   - Set email verification
+   - Set forgot password
+
+2. Realm Settings → User profile (About Registration)
+   - Define which fields are required
+   - Add custom attributes
+   - Set validation rules
+
+3. Authentication → Password policy (Password policy in both)
+   - Set minimum length
+   - Require digits/special chars
+
+Step 3: NOW you have a user blueprint
+Once configured, the blueprint applies to:
+- Manual user creation
+- Self-registration
+- API user creation
+- Imported users
+
+So now we created attributes that what the user when registering should have , the next idea is that about
+how do we pass the values to keycloak from spring ?
+1st                       2nd                    3rd
+┌──────────┐          ┌──────────┐          ┌──────────┐
+│  USER    │          │  YOUR    │          │ KEYCLOAK │
+│ (Browser)│          │  APP     │          │  Server  │
+└────┬─────┘          └────┬─────┘          └────┬─────┘
+so when user registers , or wants to login , it can not directly communicate with the keyloack server
+only spring boot can as it has all the necessary data or configuration in order to do that so we should
+communicate with keyloack for both using end points provided by keycloak.
+
+
+📦 Brand New Realm - Empty State:
+New Realm: "mycompany" (freshly created)
+├── 👥 Users: []  ← NO USERS AT ALL!
+├── 🎭 Roles: []  ← NO ROLES (except built-in defaults)
+├── 📱 Clients: [] ← NO APPS REGISTERED
+└── ⚙️ Settings: Default only
+
+
+
+
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!NOW AFTER DO THE CODE SO YOU COULD UNDERSTAND IT MORE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+
+
+
+
+
+
+
+
+

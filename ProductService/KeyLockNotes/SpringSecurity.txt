@@ -1,0 +1,60 @@
+How spring security authentication works?
+2)public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException
+            UserAggForLogin user = userService.findUserByUserName(new UserUserName(username));
+            return new UserPrincipal(user);
+2)UserPrincipal
+public class UserPrincipal implements UserDetails {
+      private UserAggForLogin user;
+      @Override
+      public Collection<? extends GrantedAuthority> getAuthorities() {
+          return user.getRoles().stream()
+                  .map(role -> new SimpleGrantedAuthority(role.key()))
+                  .collect(Collectors.toList());}
+      @Override
+      public String getPassword() {
+          return user.getPassword().value();}
+      @Override
+      public String getUsername() {
+          return user.getUserName().value();}
+
+3)    private String authenticate(String username, String password, HttpServletResponse response) {
+          Authentication authentication = authenticationManager.authenticate(
+                  new UsernamePasswordAuthenticationToken(username, password));
+          if (authentication.isAuthenticated()) {
+              String token = jwtservice.GenerateToken(username);
+              response.setHeader("Authorization", "Bearer " + token);
+              return token;}
+
+3.1)Authentication object has the following data
+Authentication authentication = authManager.authenticate(token);
+authentication.getPrincipal();     // ← THE USER PRINCIPAL!
+authentication.getCredentials();   // (usually null after auth)
+authentication.getAuthorities();   // ← User's roles/permissions
+authentication.isAuthenticated();  // true
+authentication.getName();
+
+3.2) So Authentication manager , gets the username and password from UserNamePasswordAuthenticationToken(Username,Password)
+, then it will use UserDetailsService in order to retrieve the object by username , UserDetailsService has a method loadByUsername
+which will return user principal ,then it compares the given password in user principal with usernameauthenticationtoken given
+password.then if it is equal it will pass authentication object with the above properties.
+
+
+4)      public String authenticateUser(UserLoginRequest user, HttpServletResponse response) {
+             return authenticate(user.getUserName().value(), user.getPassword().value(), response);}
+
+    @PostMapping("/login")
+    ResponseEntity<ApiResponse<List<String>>> login(
+            @RequestBody RestUserLoginRequest request,
+            HttpServletResponse response) {
+        try {
+            String message = service.authenticateUser(RestUserLoginRequest.to(request), response);
+            ApiResponse<List<String>> apiResponse = new ApiResponse<>(
+                    200,
+                    message,
+                    null,
+                    Instant.now().toString());
+            return ResponseEntity.ok(apiResponse);} catch (RuntimeException e) {
+            ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+            return ResponseEntity.of(problemDetail).build();}}
+
+

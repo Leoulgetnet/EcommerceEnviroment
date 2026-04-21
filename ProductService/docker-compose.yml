@@ -1,0 +1,167 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: ecommerce-db
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+        #"Hey Docker, take the folder /var/lib/postgresql/data
+        #from inside the Postgres container and MIRROR it to a folder on my computer called postgres_data"
+        #Telling it to save our files on our computer , rather
+      #than of in container as it will be deleted and the file will be too
+      #C:\ProgramData\Docker\volumes\postgres_data\_data
+
+    ports:
+      - "5432:5432"  #this is for mapping , does set any port
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - ecommerce-network
+    depends_on:
+      - postgres
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloak
+    environment:
+      #Database Config - USE EXISTING ecommerce DATABASE
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/ecommerce  # 👈 CHANGED!
+      KC_DB_USERNAME: root
+      KC_DB_PASSWORD: root
+      #Keycloak config
+      KC_HOSTNAME: localhost
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 9090
+      # Add startup timeout
+      KC_DB_POOL_INITIAL_SIZE: 1
+      KC_DB_POOL_MAX_SIZE: 10
+      # Import realm configuration if you have it
+      KEYCLOAK_IMPORT: /opt/keycloak/data/import/realm.json
+    ports:
+      - "9090:9090"
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak-config:/opt/keycloak/data/import  # Optional: auto-import realm config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    # Add healthcheck to give it time
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9090" ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # ========== KAFKA - KRaft Mode (No ZooKeeper) WITH NO SECURITY ==========
+  # ========== KAFKA - KRaft Mode (No ZooKeeper) WITH DUAL LISTENERS ==========
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    user: root
+    environment:
+      # KRaft mode configuration
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Listeners configuration - DUAL LISTENERS for Docker AND localhost
+      # - Internal listener for Docker containers (using 'kafka' hostname)
+      # - External listener for localhost development (using 'localhost')
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      # KRaft required settings
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_METADATA_LOG_DIR: /var/lib/kafka/metadata
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - kafka_metadata:/var/lib/kafka/metadata
+    ports:
+      - "9092:9092"   # Docker internal communication (kafka:9092)
+      - "9094:9094"   # Localhost development (localhost:9094)
+    networks:
+      - ecommerce-network
+
+  # Kafka UI - Update to use localhost for external access
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092  # Uses internal Docker communication
+      SPRING_SECURITY_USER_NAME: admin
+      SPRING_SECURITY_USER_PASSWORD: admin123
+    ports:
+      - "6080:8080"
+    networks:
+      - ecommerce-network
+
+# ========== OPEN TELEMETRY (commented out) ==========
+#  zipkin:
+#    image: openzipkin/zipkin:latest
+#    container_name: zipkin
+#    ports:
+#      - "9411:9411"
+#    networks:
+#      - ecommerce-network
+
+volumes:
+  postgres_data:
+  kafka_data:      # Kafka data volume
+  kafka_metadata:  # Kafka metadata volume for KRaft
+  # clickhouse-data:  # commented out
+  # signoz-data:      # commented out
+
+networks:
+  ecommerce-network:
+    driver: bridge
+    name: ecommerce-network
+
+
+#    networks:
+#      kafka-network: this name only works in this docker file while if we assign a name
+#                                           for this network it will be global
+#        driver: bridge   #This creates a network
+
+#        networks:
+#          kafka-network: # This is just an alias in this file
+#            driver: bridge
+#            name: my-custom-network-name  # ← This is the ACTUAL network name
+
+#Joining a network
+#networks:
+#  keycloak-network:
+#    external: true          # Tells Compose: "This network already exists"
+#    name: keycloak-network  # The actual network name

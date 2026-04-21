@@ -1,0 +1,49 @@
+Without any network setup:
+Your container is isolated (like a computer with no network cable)
+It can't talk to other containers
+It can't talk to the internet
+It can only talk to your PC because of -p (which is actually creating a network bridge!)
+docker run -p 9090:9090 myapp --server.port=9090
+
+
+# Create a network
+docker network create mynet
+
+# Run both containers on same network
+docker run -d --network mynet --name userservice user-app
+docker run -d --network mynet --name orderservice order-app
+
+or
+
+docker run -d --network mynet --name userservice -p 8081:8080 user-app --server.port=8080
+docker run -d --network mynet --name orderservice -p 8082:8080 order-app --server.port=8080
+
+                                !!  The port configuration is same with network or without network  !!
+                                !!  Communication between containers is not by local host way but by assigning
+                                                        service names !!
+
+# Now User Service can call:
+# http://orderservice:8080 (by container name!)
+# Not localhost, but the actual container name!
+
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+1. Creates container from "myapp" image
+2. Maps YOUR port 9090 → CONTAINER port 9090
+3. Tells Spring Boot to run on port 9090
+4. Container can talk to YOUR PC via port 9090
+5. Container CANNOT talk to other containers!
+
+Step 1: Create Network (Virtual Switch)
+# Create a network called "mynet"
+docker network create mynet
+
+
+docker run -d --network mynet --name userservice -p 8081:8080 user-app --server.port=8080
+docker run -d --network mynet --name orderservice -p 8082:8080 order-app --server.port=8080
+
+
+# Now User Service can call:
+# http://orderservice:8080 (by container name!)
+# Not localhost, but the actual container name!
+

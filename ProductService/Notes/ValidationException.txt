@@ -1,0 +1,23 @@
+📋 Jakarta Validation Annotations:
+Annotation	Purpose	Exception Thrown
+@NotNull	Value cannot be null	ConstraintViolationException
+@NotBlank	String not null, not empty, not whitespace	ConstraintViolationException
+@NotEmpty	String/collection/map not empty	ConstraintViolationException
+@Size(min, max)	Size between min and max	ConstraintViolationException
+@Min(value)	Number >= value	ConstraintViolationException
+@Max(value)	Number <= value	ConstraintViolationException
+@DecimalMin(value)	Decimal >= value	ConstraintViolationException
+@DecimalMax(value)	Decimal <= value	ConstraintViolationException
+@Positive	Number > 0	ConstraintViolationException
+@PositiveOrZero	Number >= 0	ConstraintViolationException
+@Negative	Number < 0	ConstraintViolationException
+@NegativeOrZero	Number <= 0	ConstraintViolationException
+@Email	Valid email format	ConstraintViolationException
+@Pattern(regexp)	Matches regex pattern	ConstraintViolationException
+@Past	Date in the past	ConstraintViolationException
+@PastOrPresent	Date in past or today	ConstraintViolationException
+@Future	Date in the future	ConstraintViolationException
+@FutureOrPresent	Date in future or today	ConstraintViolationException
+@AssertTrue	Must be true	ConstraintViolationException
+@AssertFalse	Must be false	ConstraintViolationException
+@Digits(integer, fraction)	Number with exact digits	ConstraintViolationException

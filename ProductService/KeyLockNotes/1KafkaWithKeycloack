@@ -1,0 +1,86 @@
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PRODUCER SIDE (SENDING MESSAGE)                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Your code calls: kafkaTemplate.send("orders", order)            │
+│                           ↓                                         │
+│  2. PRODUCER INTERCEPTOR INTERCEPTS!                                │
+│     - Calls Keycloak to get fresh JWT token                         │
+│     - Adds HTTP header: "Authorization: Bearer eyJhbGc..."          │
+│     - Injects token into Kafka message headers                      │
+│                           ↓                                         │
+│  3. Message with token sent to Kafka Broker                         │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                   CONSUMER SIDE (RECEIVING MESSAGE)                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  1. Kafka delivers message to your consumer                         │
+│                           ↓                                         │
+│  2. CONSUMER INTERCEPTOR INTERCEPTS!                                │
+│     - Extracts JWT token from message headers                       │
+│     - Validates token signature with Keycloak's public key          │
+│     - Checks token hasn't expired                                   │
+│     - Checks issuer matches Keycloak                                │
+│                           ↓                                         │
+│  3. If valid → message delivered to @KafkaListener                  │
+│     If invalid → message rejected (not delivered)                   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+ ========== SHARED (Both Apps Need This) ============================================
+# Kafka connection
+spring.kafka.bootstrap-servers=kafka.mycompany.com:9093
+
+# Security protocol
+spring.kafka.properties.security.protocol=SASL_SSL
+spring.kafka.properties.sasl.mechanism=OAUTHBEARER
+
+# SSL truststore (same for both)
+spring.kafka.properties.ssl.truststore.location=/etc/ssl/kafka.truststore.jks
+spring.kafka.properties.ssl.truststore.password=changeit
+
+
+# ========== PRODUCER ONLY ====================================================================
+# JAAS config (gets token to send messages)
+spring.kafka.properties.sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+  oauth.token.endpoint.uri="https://keycloak.com/realms/prod/protocol/openid-connect/token" \
+  oauth.client.id="producer-app" \
+  oauth.client.secret="producer-secret";
+
+# Producer interceptor (attaches token to messages)
+spring.kafka.producer.interceptor.classes=org.apache.kafka.common.security.oauthbearer.OAuthBearerProducerInterceptor
+
+# Producer serializers
+spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+
+# ❌ NO consumer properties
+# ❌ NO consumer group.id
+# ❌ NO consumer interceptor
+
+
+# ========== CONSUMER ONLY ===================================================================================
+# JAAS config (gets token to validate incoming tokens)
+spring.kafka.properties.sasl.jaas.config=org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+  oauth.token.endpoint.uri="https://keycloak.com/realms/prod/protocol/openid-connect/token" \
+  oauth.client.id="consumer-app" \
+  oauth.client.secret="consumer-secret";
+
+# Consumer interceptor (validates tokens on incoming messages)
+spring.kafka.consumer.interceptor.classes=org.apache.kafka.common.security.oauthbearer.OAuthBearerConsumerInterceptor
+
+# Consumer settings
+spring.kafka.consumer.group.id=my-consumer-group
+spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+spring.kafka.consumer.properties.spring.json.trusted.packages=*
+
+# Token validation (who is allowed)
+spring.kafka.properties.oauth.valid.issuer.uri=https://keycloak.com/realms/prod
+
+# ❌ NO producer properties
+# ❌ NO producer interceptor
+# ❌ NO producer serializers
