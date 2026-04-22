@@ -27,6 +27,11 @@
 	</properties>
 
 	<dependencies>
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
+
 		<!-- OAuth2 Resource Server -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

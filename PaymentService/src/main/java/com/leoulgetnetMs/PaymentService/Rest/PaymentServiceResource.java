@@ -1,7 +1,5 @@
 package com.leoulgetnetMs.PaymentService.Rest;
-
 import LeoulGetnetMs.ProductService.ProtoGenerated.ProductInfo.ProductInformationGrpc;
-import com.google.protobuf.Int32Value;
 import com.google.protobuf.Int64Value;
 import com.leoulgetnetMs.PaymentService.ExceptionHandler.InsufficientBalanceException;
 import com.leoulgetnetMs.PaymentService.ExceptionHandler.ProductNotFoundException;
@@ -11,11 +9,11 @@ import lombok.RequiredArgsConstructor;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -25,6 +23,7 @@ import java.util.stream.Collectors;
 public class PaymentServiceResource {
 
 
+    private final KafkaTemplate<String,String> kafkaTemplate;
     private final TokenService tokenService;
 
     @GrpcClient("productInformation")
@@ -87,6 +86,7 @@ public class PaymentServiceResource {
             }
             // Update order status to PAID
             orderStub.changeOrderStatus(orderRequest);
+            kafkaTemplate.send("ordercompletetion",String.valueOf(order.getOrderId()));
 
             return ResponseEntity.ok("Payment successful");
 
@@ -99,8 +99,7 @@ public class PaymentServiceResource {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Payment failed: " + e.getMessage());
-        }
-    }
+        }}
 
 
 
@@ -109,10 +108,4 @@ public class PaymentServiceResource {
     @GetMapping("/check")
     ResponseEntity<String> payForOrder(){
     return ResponseEntity.ok("works");
-    }
-
-
-
-
-
-}
+    }}

@@ -1,9 +1,11 @@
 package LeoulGetnetMs.OrderService.Order.Infrastructure.Primary;
 
 import LeoulGetnetMs.OrderService.Order.Domain.Aggregiate.Order;
+import LeoulGetnetMs.OrderService.Order.Domain.Aggregiate.OrderItem;
 import LeoulGetnetMs.OrderService.Order.Infrastructure.Secondary.Repository.SpringDataOrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
@@ -14,6 +16,12 @@ public class OrderResource {
 
     private final SpringDataOrderRepository orderRepository;
 
+
+    @KafkaListener(topics = "ordercompletetion",groupId = "ordercompletiongroupid")
+    public void consumeEvent(String value){
+        System.out.println("order completed for order id "+value);
+
+    }
     @GetMapping
     public ResponseEntity<List<Order>> getAllOrders() {
         return ResponseEntity.ok(orderRepository.getAllOrders());
@@ -25,7 +33,7 @@ public class OrderResource {
     }
 
     @PostMapping
-    public ResponseEntity<Order> createOrder(@RequestBody Order order) {
+    public ResponseEntity<Order> createOrder(@RequestBody List<OrderItem> order) {
         return ResponseEntity.ok(orderRepository.save(order));
     }
 

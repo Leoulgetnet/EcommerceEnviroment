@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/product")
 public class ProductResource {
-    private final KafkaTemplate<String,byte[]> kafkaTemplate;
+//    private final KafkaTemplate<String,byte[]> kafkaTemplate;
     private final SpringDataProductRepository productRepository;
     private int x=0;
 
@@ -46,7 +46,7 @@ public class ProductResource {
                 .setPrice(BigDecimal.valueOf(1000).toString()).setCurrentStock(1)
                 .setName("Shoes")
                 .build();
-        kafkaTemplate.send("testActions", productResponse.toByteArray());
+//        kafkaTemplate.send("testActions", productResponse.toByteArray());
             return ResponseEntity.ok(product);
       }
 

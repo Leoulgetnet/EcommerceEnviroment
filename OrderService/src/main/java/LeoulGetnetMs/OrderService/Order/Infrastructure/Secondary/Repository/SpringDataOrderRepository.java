@@ -32,7 +32,7 @@ public class SpringDataOrderRepository {
 
 
 
-    public Order save(Order order) {
+    public Order save(List<OrderItem> orderItems) {
         // Get the service token
         String token = tokenService.getServiceToken();
         // Create stub with token interceptor
@@ -41,7 +41,7 @@ public class SpringDataOrderRepository {
 
         List<ProductResponse> list;
         try {
-            list = order.getItems().stream()
+            list = orderItems.stream()
                     .map(e -> authStub.getStockInformation(
                             ProductRequest.newBuilder().setId(e.getProductId()).build()))
                     .toList();
@@ -53,7 +53,7 @@ public class SpringDataOrderRepository {
 
         List<OrderItemEntity> OrderItemEntityList = new ArrayList<>();
 
-        for (OrderItem o : order.getItems()) {
+        for (OrderItem o : orderItems) {
             Optional<ProductResponse> productResponse = list.stream()
                     .filter(e -> Long.valueOf(e.getId()).equals(o.getProductId()))
                     .findFirst();

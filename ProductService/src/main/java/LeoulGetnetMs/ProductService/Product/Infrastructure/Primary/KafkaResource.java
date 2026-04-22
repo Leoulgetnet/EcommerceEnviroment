@@ -30,19 +30,20 @@ public class KafkaResource {
 
 
 
-    @KafkaListener(topics = "testActions", groupId = "kafkaconsumerid")
-    public void consumeEvent(byte[] product) {
-        if (product != null && product.length > 0) {
-            try {
-                ProductResponse productResponse = ProductResponse.parseFrom(product);
-                System.out.println("--------------------------------------------------------------");
-                System.out.println("Received Product: " + productResponse.toString());
-                System.out.println("--------------------------------------------------------------");
-            } catch (Exception e) {
-                // LOG THE ERROR at minimum!
-                log.error(e.getMessage());
-
-                // Optionally: send to DLQ, log metrics, etc.
-            }
-        }
-    }}
+//    @KafkaListener(topics = "testActions", groupId = "kafkaconsumerid")
+//    public void consumeEvent(byte[] product) {
+//        if (product != null && product.length > 0) {
+//            try {
+//                ProductResponse productResponse = ProductResponse.parseFrom(product);
+//                System.out.println("--------------------------------------------------------------");
+//                System.out.println("Received Product: " + productResponse.toString());
+//                System.out.println("--------------------------------------------------------------");
+//            } catch (Exception e) {
+//                // LOG THE ERROR at minimum!
+//                log.error(e.getMessage());
+//
+//                // Optionally: send to DLQ, log metrics, etc.
+//            }
+//        }
+//    }
+}
