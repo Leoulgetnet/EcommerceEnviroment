@@ -1,5 +1,4 @@
 package LeoulGetnetMs.ProductService.Product.Infrastructure.Primary;
-
 import LeoulGetnetMs.ProductService.Product.Domain.Aggregiate.Product;
 import LeoulGetnetMs.ProductService.ProtoGenerated.ProductInfo.ProductResponse;
 import lombok.extern.slf4j.Slf4j;
